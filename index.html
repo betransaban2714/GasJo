@@ -1,86 +1,98 @@
 <!DOCTYPE html>
-<html>
+<html lang="id">
 <head>
-  <title>GasJo-OjekOnline</title>
+  <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GasJo - Pelacak Perjalanan</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
   <style>
-    #map { height: 400px; }
-    button { padding: 10px 20px; margin: 5px; }
+    body {
+      margin: 0;
+      font-family: 'Segoe UI', sans-serif;
+      background: #f0f2f5;
+    }
+    header {
+      padding: 1rem;
+      background: #222;
+      color: white;
+      text-align: center;
+      font-size: 1.2rem;
+    }
+    #map {
+      height: 70vh;
+    }
+    .controls {
+      padding: 1rem;
+      text-align: center;
+    }
+    button {
+      padding: 10px 20px;
+      margin: 0.5rem;
+      border: none;
+      border-radius: 8px;
+      background: #007bff;
+      color: white;
+      font-size: 1rem;
+      cursor: pointer;
+    }
+    #distance {
+      margin-top: 1rem;
+      font-weight: bold;
+    }
   </style>
 </head>
 <body>
-  <h2>Tracking Perjalanan</h2>
-  <button onclick="mulaiTracking()">Mulai</button>
-  <button onclick="selesaiTracking()">Selesai</button>
-  <p>Jarak Tempuh: <span id="jarak">0</span> meter</p>
+  <header>GasJo - Lacak Perjalananmu</header>
   <div id="map"></div>
+  <div class="controls">
+    <button onclick="startTracking()">Mulai</button>
+    <button onclick="stopTracking()">Selesai</button>
+    <div id="distance">Jarak: 0 meter</div>
+  </div>
 
   <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
   <script>
-    let map = L.map('map').setView([-6.2, 106.8], 15);
-    let posisiSebelumnya = null;
-    let totalJarak = 0;
-    let tracking = false;
-    let watchId;
-    let polyline = L.polyline([], { color: 'blue' }).addTo(map);
+    let map = L.map('map').setView([-6.2, 106.8], 13);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      attribution: 'Map data © OpenStreetMap contributors'
-    }).addTo(map);
+    let watchId, totalDistance = 0, lastLatLng;
+    let path = L.polyline([], { color: 'blue' }).addTo(map);
 
-    function mulaiTracking() {
-      totalJarak = 0;
-      posisiSebelumnya = null;
-      polyline.setLatLngs([]);
-      tracking = true;
-
-      if (navigator.geolocation) {
-        watchId = navigator.geolocation.watchPosition(updatePosisi, null, {
-          enableHighAccuracy: true,
-          maximumAge: 0,
-          timeout: 5000
-        });
-      } else {
-        alert("Geolocation tidak didukung di browser ini.");
-      }
-    }
-
-    function selesaiTracking() {
-      tracking = false;
-      navigator.geolocation.clearWatch(watchId);
-      document.getElementById("jarak").innerText = totalJarak.toFixed(2);
-    }
-
-    function updatePosisi(pos) {
-      const latlng = [pos.coords.latitude, pos.coords.longitude];
-
-      L.marker(latlng).addTo(map);
-      polyline.addLatLng(latlng);
-      map.panTo(latlng);
-
-      if (posisiSebelumnya) {
-        const jarak = hitungJarak(posisiSebelumnya, latlng);
-        totalJarak += jarak;
+    function startTracking() {
+      if (!navigator.geolocation) {
+        alert("Geolocation tidak didukung browser.");
+        return;
       }
 
-      posisiSebelumnya = latlng;
+      totalDistance = 0;
+      path.setLatLngs([]);
+      watchId = navigator.geolocation.watchPosition(pos => {
+        const latlng = [pos.coords.latitude, pos.coords.longitude];
+        L.marker(latlng).addTo(map);
+        map.setView(latlng, 16);
+
+        if (lastLatLng) {
+          const dist = map.distance(lastLatLng, latlng);
+          totalDistance += dist;
+        }
+        lastLatLng = latlng;
+        path.addLatLng(latlng);
+
+        document.getElementById("distance").innerText =
+          `Jarak: ${totalDistance.toFixed(2)} meter`;
+      }, err => {
+        alert("Gagal mendapatkan lokasi: " + err.message);
+      }, {
+        enableHighAccuracy: true
+      });
     }
 
-    function hitungJarak(p1, p2) {
-      const toRad = deg => deg * Math.PI / 180;
-      const R = 6371e3;
-      const lat1 = toRad(p1[0]);
-      const lat2 = toRad(p2[0]);
-      const dLat = toRad(p2[0] - p1[0]);
-      const dLon = toRad(p2[1] - p1[1]);
-
-      const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-                Math.cos(lat1) * Math.cos(lat2) *
-                Math.sin(dLon / 2) * Math.sin(dLon / 2);
-
-      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-      return R * c; // hasil dalam meter
+    function stopTracking() {
+      if (watchId) {
+        navigator.geolocation.clearWatch(watchId);
+        watchId = null;
+        alert(`Pelacakan selesai. Total jarak: ${totalDistance.toFixed(2)} meter`);
+      }
     }
   </script>
 </body>
