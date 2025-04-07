@@ -3,7 +3,6 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>GasJo - Rute Ojek</title>
-  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
   <style>
     body {
       margin: 0;
@@ -15,7 +14,9 @@
       align-items: center;
       padding: 1rem;
     }
-    h1 { margin-bottom: 1rem; }
+    h1 {
+      margin-bottom: 1rem;
+    }
     #map {
       width: 90%;
       height: 300px;
@@ -34,91 +35,110 @@
       cursor: pointer;
     }
     .popup {
+      background-color: white;
+      color: black;
+      padding: 1rem;
+      border-radius: 10px;
+      box-shadow: 0 0 20px rgba(0,0,0,0.4);
       position: fixed;
       top: 50%;
       left: 50%;
       transform: translate(-50%, -50%);
-      background: white;
-      color: black;
-      padding: 1rem 2rem;
-      border-radius: 10px;
-      box-shadow: 0 4px 20px rgba(0,0,0,0.5);
-      display: none;
       z-index: 999;
+      display: none;
+    }
+    .popup h2 {
+      margin-top: 0;
+    }
+    .popup button {
+      margin-top: 1rem;
+      background-color: #1e3a8a;
+      color: white;
+      border: none;
+      padding: 0.5rem 1rem;
+      border-radius: 8px;
+      cursor: pointer;
     }
   </style>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
 </head>
 <body>
-  <h1>GasJo - Rekam Rute Ojek</h1>
+  <h1>GasJo - Rute Ojek</h1>
   <div id="map"></div>
   <div class="button-group">
     <button onclick="mulaiTracking()">Mulai</button>
     <button onclick="selesaiTracking()">Selesai</button>
-  </div>  <div id="popup" class="popup"></div>  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>  <script>
-    let map = L.map('map').setView([0, 0], 18);
-    let route = [];
-    let totalDistance = 0;
-    let tracking = false;
-    let watchId = null;
-
+  </div>
+  <div class="popup" id="popup">
+    <h2>Info Perjalanan</h2>
+    <p id="popupText"></p>
+    <button onclick="tutupPopup()">Tutup</button>
+  </div>  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>  <script>
+    let map = L.map('map').setView([-6.2, 106.8], 15);
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      maxZoom: 19,
-      attribution: '© OpenStreetMap'
+      attribution: '&copy; OpenStreetMap'
     }).addTo(map);
 
-    let polyline = L.polyline([], { color: 'lime', weight: 5 }).addTo(map);
+    let startMarker, endMarker, pathLine;
+    let watchId, totalDistance = 0;
+    let path = [];
+
+    function haversine(lat1, lon1, lat2, lon2) {
+      function toRad(x) { return x * Math.PI / 180; }
+      let R = 6371;
+      let dLat = toRad(lat2 - lat1);
+      let dLon = toRad(lon2 - lon1);
+      let a = Math.sin(dLat/2)**2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon/2)**2;
+      let c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+      return R * c;
+    }
 
     function mulaiTracking() {
-      route = [];
+      if (!navigator.geolocation) return alert("GPS tidak didukung");
+      path = [];
       totalDistance = 0;
-      tracking = true;
-      polyline.setLatLngs([]);
+      watchId = navigator.geolocation.watchPosition(pos => {
+        let lat = pos.coords.latitude;
+        let lon = pos.coords.longitude;
+        let current = [lat, lon];
+        path.push(current);
 
-      if (navigator.geolocation) {
-        watchId = navigator.geolocation.watchPosition(pos => {
-          const latlng = [pos.coords.latitude, pos.coords.longitude];
-          route.push(latlng);
-          polyline.addLatLng(latlng);
-          map.setView(latlng, 18);
+        if (path.length > 1) {
+          let prev = path[path.length - 2];
+          totalDistance += haversine(prev[0], prev[1], lat, lon);
+        }
 
-          if (route.length > 1) {
-            const prev = route[route.length - 2];
-            const dist = map.distance(prev, latlng);
-            totalDistance += dist;
-          }
-        }, err => {
-          alert('Gagal mendapatkan lokasi: ' + err.message);
-        }, {
-          enableHighAccuracy: true,
-          timeout: 20000,
-          maximumAge: 0
-        });
-      } else {
-        alert("Geolocation tidak didukung di browser ini.");
-      }
+        if (!startMarker) {
+          startMarker = L.marker(current).addTo(map).bindPopup("Mulai").openPopup();
+        }
+        if (pathLine) map.removeLayer(pathLine);
+        pathLine = L.polyline(path, { color: 'lime' }).addTo(map);
+        map.setView(current, 16);
+      }, err => {
+        alert("Gagal mendapatkan lokasi: " + err.message);
+      }, {
+        enableHighAccuracy: true,
+        timeout: 20000,
+        maximumAge: 0
+      });
     }
 
     function selesaiTracking() {
-      if (!tracking) return;
-      tracking = false;
       navigator.geolocation.clearWatch(watchId);
+      if (path.length > 0) {
+        let end = path[path.length - 1];
+        endMarker = L.marker(end).addTo(map).bindPopup("Selesai").openPopup();
+        let km = totalDistance.toFixed(2);
+        let harga = Math.ceil(km * 2500);
+        document.getElementById('popupText').innerText = `Jarak: ${km} km\nHarga: Rp ${harga.toLocaleString()}`;
+        document.getElementById('popup').style.display = 'block';
+      } else {
+        alert("Tidak ada data perjalanan.");
+      }
+    }
 
-      const km = totalDistance / 1000;
-      const tarifPerKm = 2500;
-      const biaya = Math.round(km * tarifPerKm);
-
-      const info = `
-        Jarak: ${km.toFixed(2)} km<br>
-        Biaya: Rp ${biaya.toLocaleString('id-ID')}
-      `;
-
-      const popup = document.getElementById("popup");
-      popup.innerHTML = info;
-      popup.style.display = "block";
-
-      setTimeout(() => {
-        popup.style.display = "none";
-      }, 8000);
+    function tutupPopup() {
+      document.getElementById('popup').style.display = 'none';
     }
   </script></body>
-  </html>
+</html
