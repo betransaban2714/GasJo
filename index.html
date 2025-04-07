@@ -1,119 +1,110 @@
 <!DOCTYPE html>
 <html lang="id">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>GasJo - Pelacak & Tarif</title>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>GasJo - Pelacak & Biaya</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
   <style>
-    body { margin: 0; font-family: Arial, sans-serif; background: #f0f0f0; }
-    header { background: #1f2937; color: white; padding: 1rem; text-align: center; font-size: 1.3rem; }
+    body { margin: 0; font-family: sans-serif; }
+    header { background: #111827; color: white; padding: 1rem; text-align: center; }
     #map { height: 65vh; }
     .controls {
       padding: 1rem;
       text-align: center;
-      background: white;
+      background: #f9fafb;
     }
     button {
       padding: 10px 20px;
       margin: 0.5rem;
       border: none;
       border-radius: 8px;
-      background-color: #1d4ed8;
+      background: #2563eb;
       color: white;
+      font-size: 1rem;
       font-weight: bold;
-      cursor: pointer;
     }
-    #resultBox {
+    .notif {
       display: none;
+      position: fixed;
+      top: 20%;
+      left: 10%;
+      right: 10%;
       background: white;
-      border: 2px solid #1d4ed8;
-      padding: 1rem;
-      margin: 1rem;
+      border: 2px solid #111827;
       border-radius: 10px;
-      text-align: center;
-      font-weight: bold;
+      padding: 1rem;
+      box-shadow: 0 5px 15px rgba(0,0,0,0.2);
+      z-index: 999;
     }
   </style>
 </head>
 <body>
-
-  <header>GasJo - Lacak Perjalanan</header>
+  <header>GasJo - Lacak & Biaya Perjalanan</header>
   <div id="map"></div>
-
   <div class="controls">
-    <button onclick="mulaiTracking()">Mulai</button>
-    <button onclick="selesaiTracking()">Selesai</button>
-    <div id="info" class="info">Jarak: 0 km</div>
+    <button onclick="mulai()">Mulai</button>
+    <button onclick="selesai()">Selesai</button>
+    <div id="infoJarak">Jarak: 0 m</div>
   </div>
-
-  <div id="resultBox"></div>
+  <div class="notif" id="notifBox"></div>
 
   <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
   <script>
     let map = L.map('map').setView([-6.2, 106.8], 13);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      attribution: '© OpenStreetMap'
-    }).addTo(map);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
+    let posisiSebelumnya = null;
+    let garis = [];
+    let totalJarak = 0;
     let watchId;
-    let path = [];
-    let polyline = L.polyline([], { color: 'blue' }).addTo(map);
-    let totalDistance = 0;
 
-    function getDistance(lat1, lon1, lat2, lon2) {
-      const R = 6371; // km
-      const dLat = (lat2 - lat1) * Math.PI / 180;
-      const dLon = (lon2 - lon1) * Math.PI / 180;
-      const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
-                Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
-                Math.sin(dLon/2) * Math.sin(dLon/2);
-      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-      return R * c;
-    }
-
-    function mulaiTracking() {
-      path = [];
-      totalDistance = 0;
-      polyline.setLatLngs([]);
+    function mulai() {
       if (!navigator.geolocation) {
         alert("Geolocation tidak didukung.");
         return;
       }
-      watchId = navigator.geolocation.watchPosition(pos => {
-        const lat = pos.coords.latitude;
-        const lon = pos.coords.longitude;
-        const newPoint = [lat, lon];
-        path.push(newPoint);
-        polyline.addLatLng(newPoint);
-        map.setView(newPoint, 16);
 
-        if (path.length > 1) {
-          const last = path[path.length - 2];
-          totalDistance += getDistance(last[0], last[1], lat, lon);
-          document.getElementById("info").innerText = `Jarak: ${totalDistance.toFixed(2)} km`;
+      watchId = navigator.geolocation.watchPosition(pos => {
+        const { latitude, longitude } = pos.coords;
+        const lokasiBaru = [latitude, longitude];
+
+        if (posisiSebelumnya) {
+          const jarak = map.distance(posisiSebelumnya, lokasiBaru);
+          totalJarak += jarak;
+          garis.push(lokasiBaru);
+          L.polyline(garis, { color: 'blue' }).addTo(map);
+        } else {
+          L.marker(lokasiBaru).addTo(map).bindPopup("Mulai di sini").openPopup();
+          garis = [lokasiBaru];
         }
+
+        posisiSebelumnya = lokasiBaru;
+        map.setView(lokasiBaru, 16);
+        document.getElementById("infoJarak").innerText = `Jarak: ${totalJarak.toFixed(2)} meter`;
       }, err => {
-        alert("Gagal mendapatkan lokasi: " + err.message);
-      }, {
-        enableHighAccuracy: true,
-        maximumAge: 0,
-        timeout: 10000
-      });
+        alert("Gagal mendapatkan lokasi. Pastikan izin lokasi aktif.");
+        console.error(err);
+      }, { enableHighAccuracy: true });
     }
 
-    function selesaiTracking() {
+    function selesai() {
       if (watchId) navigator.geolocation.clearWatch(watchId);
-      const biaya = Math.round(totalDistance * 2500);
-      const box = document.getElementById("resultBox");
-      box.style.display = "block";
-      box.innerHTML = `
-        <h3>Perjalanan Selesai!</h3>
-        <p>Jarak tempuh: <b>${totalDistance.toFixed(2)} km</b></p>
-        <p>Total biaya: <b>Rp ${biaya.toLocaleString()}</b></p>
+      const km = totalJarak / 1000;
+      const harga = Math.round(km * 2500);
+      const notif = document.getElementById("notifBox");
+      notif.innerHTML = `
+        <h3>Perjalanan Selesai</h3>
+        <p>Jarak tempuh: ${km.toFixed(2)} km</p>
+        <p>Total Biaya: Rp ${harga.toLocaleString()}</p>
+        <button onclick="tutupNotif()">Tutup</button>
       `;
+      notif.style.display = "block";
+    }
+
+    function tutupNotif() {
+      document.getElementById("notifBox").style.display = "none";
     }
   </script>
-
 </body>
 </html>
