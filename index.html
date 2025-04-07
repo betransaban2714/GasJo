@@ -3,107 +3,111 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>GasJo - Pelacak & Biaya</title>
+  <title>GasJo - Pelacak</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
   <style>
-    body { margin: 0; font-family: sans-serif; }
-    header { background: #111827; color: white; padding: 1rem; text-align: center; }
+    body { margin: 0; font-family: Arial, sans-serif; background: #f8fafc; }
     #map { height: 65vh; }
-    .controls {
-      padding: 1rem;
-      text-align: center;
-      background: #f9fafb;
-    }
+    .controls { text-align: center; padding: 1rem; }
     button {
       padding: 10px 20px;
-      margin: 0.5rem;
-      border: none;
-      border-radius: 8px;
-      background: #2563eb;
-      color: white;
-      font-size: 1rem;
+      margin: 0.3rem;
       font-weight: bold;
+      border-radius: 8px;
+      border: none;
+      background-color: #1e3a8a;
+      color: white;
     }
-    .notif {
-      display: none;
+    .popup-box {
       position: fixed;
-      top: 20%;
-      left: 10%;
-      right: 10%;
+      top: 50%; left: 50%;
+      transform: translate(-50%, -50%);
       background: white;
-      border: 2px solid #111827;
-      border-radius: 10px;
-      padding: 1rem;
-      box-shadow: 0 5px 15px rgba(0,0,0,0.2);
-      z-index: 999;
+      border-radius: 12px;
+      box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+      padding: 20px;
+      display: none;
+      z-index: 9999;
     }
   </style>
 </head>
 <body>
-  <header>GasJo - Lacak & Biaya Perjalanan</header>
   <div id="map"></div>
   <div class="controls">
-    <button onclick="mulai()">Mulai</button>
-    <button onclick="selesai()">Selesai</button>
-    <div id="infoJarak">Jarak: 0 m</div>
+    <button onclick="mulaiTracking()">Mulai</button>
+    <button onclick="selesaiTracking()">Selesai</button>
+    <div id="info"></div>
   </div>
-  <div class="notif" id="notifBox"></div>
+
+  <div class="popup-box" id="hasilBox"></div>
 
   <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
   <script>
-    let map = L.map('map').setView([-6.2, 106.8], 13);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+    let map = L.map('map').setView([-6.2, 106.8], 13); // Default ke Jakarta
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '© OpenStreetMap'
+    }).addTo(map);
 
-    let posisiSebelumnya = null;
-    let garis = [];
-    let totalJarak = 0;
-    let watchId;
+    let watchID, path = [], polyline;
+    let totalDistance = 0;
 
-    function mulai() {
-      if (!navigator.geolocation) {
-        alert("Geolocation tidak didukung.");
-        return;
-      }
+    function getDistance(lat1, lon1, lat2, lon2) {
+      const R = 6371; // km
+      const dLat = (lat2 - lat1) * Math.PI / 180;
+      const dLon = (lon2 - lon1) * Math.PI / 180;
+      const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+                Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+                Math.sin(dLon/2) * Math.sin(dLon/2);
+      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+      return R * c;
+    }
 
-      watchId = navigator.geolocation.watchPosition(pos => {
-        const { latitude, longitude } = pos.coords;
-        const lokasiBaru = [latitude, longitude];
+    function mulaiTracking() {
+      path = [];
+      totalDistance = 0;
+      if (polyline) map.removeLayer(polyline);
+      watchID = navigator.geolocation.watchPosition(pos => {
+        const lat = pos.coords.latitude;
+        const lon = pos.coords.longitude;
+        const akurasi = pos.coords.accuracy;
 
-        if (posisiSebelumnya) {
-          const jarak = map.distance(posisiSebelumnya, lokasiBaru);
-          totalJarak += jarak;
-          garis.push(lokasiBaru);
-          L.polyline(garis, { color: 'blue' }).addTo(map);
-        } else {
-          L.marker(lokasiBaru).addTo(map).bindPopup("Mulai di sini").openPopup();
-          garis = [lokasiBaru];
+        path.push([lat, lon]);
+
+        if (path.length > 1) {
+          const last = path[path.length - 2];
+          totalDistance += getDistance(last[0], last[1], lat, lon);
         }
 
-        posisiSebelumnya = lokasiBaru;
-        map.setView(lokasiBaru, 16);
-        document.getElementById("infoJarak").innerText = `Jarak: ${totalJarak.toFixed(2)} meter`;
+        if (polyline) map.removeLayer(polyline);
+        polyline = L.polyline(path, {color: 'blue'}).addTo(map);
+        map.setView([lat, lon], 16);
+
+        document.getElementById("info").innerText = `Jarak: ${totalDistance.toFixed(2)} km`;
+
       }, err => {
-        alert("Gagal mendapatkan lokasi. Pastikan izin lokasi aktif.");
-        console.error(err);
-      }, { enableHighAccuracy: true });
+        alert("Gagal mendapatkan lokasi: " + err.message);
+      }, {
+        enableHighAccuracy: true,
+        timeout: 10000,
+        maximumAge: 0
+      });
     }
 
-    function selesai() {
-      if (watchId) navigator.geolocation.clearWatch(watchId);
-      const km = totalJarak / 1000;
-      const harga = Math.round(km * 2500);
-      const notif = document.getElementById("notifBox");
-      notif.innerHTML = `
+    function selesaiTracking() {
+      navigator.geolocation.clearWatch(watchID);
+      const harga = totalDistance * 2500;
+      const popup = document.getElementById("hasilBox");
+      popup.style.display = "block";
+      popup.innerHTML = `
         <h3>Perjalanan Selesai</h3>
-        <p>Jarak tempuh: ${km.toFixed(2)} km</p>
-        <p>Total Biaya: Rp ${harga.toLocaleString()}</p>
-        <button onclick="tutupNotif()">Tutup</button>
+        <p>Total Jarak: <strong>${totalDistance.toFixed(2)} km</strong></p>
+        <p>Total Biaya: <strong>Rp ${Math.round(harga).toLocaleString()}</strong></p>
+        <button onclick="tutupPopup()">Tutup</button>
       `;
-      notif.style.display = "block";
     }
 
-    function tutupNotif() {
-      document.getElementById("notifBox").style.display = "none";
+    function tutupPopup() {
+      document.getElementById("hasilBox").style.display = "none";
     }
   </script>
 </body>
