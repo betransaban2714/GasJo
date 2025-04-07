@@ -1,125 +1,118 @@
 <!DOCTYPE html>
 <html lang="id">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>GasJo - Pelacak Perjalanan</title>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GasJo - Pelacak Lokasi</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
   <style>
-    body {
-      margin: 0;
-      font-family: 'Segoe UI', sans-serif;
-      background: #f0f2f5;
-    }
-    header {
-      padding: 1rem;
-      background: #1f2937;
-      color: white;
-      text-align: center;
-      font-size: 1.3rem;
-    }
-    #map {
-      height: 70vh;
-    }
+    body { margin: 0; font-family: Arial, sans-serif; }
+    #map { height: 70vh; }
     .controls {
       padding: 1rem;
       text-align: center;
-      background: white;
+      background-color: #f4f4f4;
     }
     button {
       padding: 10px 20px;
       margin: 0.5rem;
       border: none;
-      border-radius: 10px;
-      background: #2563eb;
+      border-radius: 8px;
+      background-color: #1d4ed8;
       color: white;
-      font-size: 1rem;
+      font-weight: bold;
       cursor: pointer;
     }
-    button:disabled {
-      background: #9ca3af;
-    }
-    .distance {
-      font-size: 1.1rem;
-      margin-top: 0.5rem;
-    }
+    .info { font-size: 1.1rem; margin-top: 0.5rem; }
   </style>
 </head>
 <body>
-  <header>GasJo - Pelacak Perjalanan</header>
+
+  <header style="text-align:center; padding:1rem; background:#1f2937; color:white;">
+    GasJo - Pelacak Perjalanan
+  </header>
+
   <div id="map"></div>
+
   <div class="controls">
-    <button onclick="mulai()" id="startBtn">Mulai</button>
-    <button onclick="selesai()" id="stopBtn" disabled>Selesai</button>
-    <div class="distance">Jarak: <span id="jarak">0</span> meter</div>
+    <button onclick="startTracking()">Mulai</button>
+    <button onclick="stopTracking()">Berhenti</button>
+    <div class="info" id="distance">Jarak: 0 meter</div>
   </div>
 
   <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
   <script>
-    let map, marker, path = [], watchId = null, totalDistance = 0;
+    let map = L.map('map').setView([0, 0], 13);
+    let pathLine = null;
+    let watchId = null;
+    let positions = [];
+    let totalDistance = 0;
 
-    function mulai() {
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '&copy; OpenStreetMap'
+    }).addTo(map);
+
+    function startTracking() {
       if (!navigator.geolocation) {
-        alert("Geolocation tidak didukung di perangkat ini.");
+        alert("Browser tidak mendukung pelacakan lokasi.");
         return;
       }
 
-      document.getElementById("startBtn").disabled = true;
-      document.getElementById("stopBtn").disabled = false;
-
-      map = L.map('map').setView([0, 0], 15);
-      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        attribution: '&copy; OpenStreetMap',
-      }).addTo(map);
-
-      marker = L.marker([0, 0]).addTo(map);
-      path = [];
+      positions = [];
       totalDistance = 0;
+      updateDistance();
 
-      watchId = navigator.geolocation.watchPosition(pos => {
-        const latlng = [pos.coords.latitude, pos.coords.longitude];
-        marker.setLatLng(latlng);
-        map.setView(latlng);
+      watchId = navigator.geolocation.watchPosition(
+        (pos) => {
+          const latlng = [pos.coords.latitude, pos.coords.longitude];
+          positions.push(latlng);
 
-        if (path.length > 0) {
-          const prev = path[path.length - 1];
-          const jarak = getDistanceFromLatLonInMeters(prev[0], prev[1], latlng[0], latlng[1]);
-          totalDistance += jarak;
-          document.getElementById("jarak").textContent = totalDistance.toFixed(2);
-        }
+          if (positions.length >= 2) {
+            const prev = positions[positions.length - 2];
+            const curr = positions[positions.length - 1];
+            totalDistance += getDistanceFromLatLonInMeters(prev[0], prev[1], curr[0], curr[1]);
+            updateDistance();
+          }
 
-        path.push(latlng);
-      }, err => {
-        alert("Gagal mengambil lokasi: " + err.message);
-      }, {
-        enableHighAccuracy: true,
-        maximumAge: 1000
-      });
+          if (pathLine) map.removeLayer(pathLine);
+          pathLine = L.polyline(positions, { color: 'blue' }).addTo(map);
+
+          L.marker(latlng).addTo(map).bindPopup("Lokasi Anda").openPopup();
+          map.setView(latlng, 16);
+        },
+        (err) => {
+          alert("Gagal mendapatkan lokasi: " + err.message);
+        },
+        { enableHighAccuracy: true, maximumAge: 10000, timeout: 5000 }
+      );
     }
 
-    function selesai() {
-      if (watchId !== null) {
+    function stopTracking() {
+      if (watchId) {
         navigator.geolocation.clearWatch(watchId);
         watchId = null;
       }
-
-      document.getElementById("startBtn").disabled = false;
-      document.getElementById("stopBtn").disabled = true;
-      alert("Jarak tempuh total: " + totalDistance.toFixed(2) + " meter");
     }
 
-    function getDistanceFromLatLonInMeters(lat1, lon1, lat2, lon2) {
-      const R = 6371e3;
-      const φ1 = lat1 * Math.PI / 180;
-      const φ2 = lat2 * Math.PI / 180;
-      const Δφ = (lat2 - lat1) * Math.PI / 180;
-      const Δλ = (lon2 - lon1) * Math.PI / 180;
+    function updateDistance() {
+      document.getElementById('distance').innerText = 'Jarak: ' + totalDistance.toFixed(2) + ' meter';
+    }
 
-      const a = Math.sin(Δφ/2) * Math.sin(Δφ/2) +
-                Math.cos(φ1) * Math.cos(φ2) *
-                Math.sin(Δλ/2) * Math.sin(Δλ/2);
+    // Fungsi menghitung jarak antar 2 titik (dalam meter)
+    function getDistanceFromLatLonInMeters(lat1, lon1, lat2, lon2) {
+      const R = 6371000; // Radius bumi dalam meter
+      const dLat = toRad(lat2 - lat1);
+      const dLon = toRad(lon2 - lon1);
+      const a =
+        Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+        Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) *
+        Math.sin(dLon / 2) * Math.sin(dLon / 2);
       const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
       return R * c;
+    }
+
+    function toRad(deg) {
+      return deg * (Math.PI / 180);
     }
   </script>
 </body>
