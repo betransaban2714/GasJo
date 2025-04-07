@@ -7,107 +7,101 @@
   <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
   <style>
     body { margin: 0; font-family: Arial, sans-serif; background: #f8fafc; }
-    #map { height: 65vh; }
-    .controls { text-align: center; padding: 1rem; }
+    #map { height: 60vh; }
+    .btns { text-align: center; padding: 1rem; background: #fff; }
     button {
-      padding: 10px 20px;
-      margin: 0.3rem;
-      font-weight: bold;
-      border-radius: 8px;
-      border: none;
-      background-color: #1e3a8a;
+      padding: 12px 20px;
+      margin: 0.5rem;
+      background: #1f2937;
       color: white;
+      border: none;
+      border-radius: 8px;
     }
-    .popup-box {
+    .popup {
       position: fixed;
-      top: 50%; left: 50%;
+      top: 50%;
+      left: 50%;
       transform: translate(-50%, -50%);
       background: white;
-      border-radius: 12px;
-      box-shadow: 0 5px 15px rgba(0,0,0,0.3);
-      padding: 20px;
+      padding: 1.5rem;
+      border-radius: 10px;
+      box-shadow: 0 0 15px rgba(0,0,0,0.2);
       display: none;
-      z-index: 9999;
+      z-index: 999;
     }
   </style>
 </head>
 <body>
+  <h2 style="text-align:center; background:#1f2937; color:white; padding:10px;">GasJo - Lacak & Hitung</h2>
   <div id="map"></div>
-  <div class="controls">
+  <div class="btns">
     <button onclick="mulaiTracking()">Mulai</button>
     <button onclick="selesaiTracking()">Selesai</button>
-    <div id="info"></div>
   </div>
-
-  <div class="popup-box" id="hasilBox"></div>
+  <div class="popup" id="popupBox"></div>
 
   <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
   <script>
-    let map = L.map('map').setView([-6.2, 106.8], 13); // Default ke Jakarta
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      attribution: '© OpenStreetMap'
-    }).addTo(map);
-
-    let watchID, path = [], polyline;
+    let map = L.map('map').setView([-6.2, 106.8], 13);
+    let route = [];
+    let polyline;
+    let watchId = null;
     let totalDistance = 0;
 
-    function getDistance(lat1, lon1, lat2, lon2) {
-      const R = 6371; // km
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19
+    }).addTo(map);
+
+    function haversine(lat1, lon1, lat2, lon2) {
+      const R = 6371;
       const dLat = (lat2 - lat1) * Math.PI / 180;
       const dLon = (lon2 - lon1) * Math.PI / 180;
-      const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
-                Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
-                Math.sin(dLon/2) * Math.sin(dLon/2);
-      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-      return R * c;
+      const a = Math.sin(dLat/2)**2 + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon/2)**2;
+      return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
     }
 
     function mulaiTracking() {
-      path = [];
-      totalDistance = 0;
-      if (polyline) map.removeLayer(polyline);
-      watchID = navigator.geolocation.watchPosition(pos => {
+      if (!navigator.geolocation) {
+        alert("Geolocation tidak didukung");
+        return;
+      }
+
+      watchId = navigator.geolocation.watchPosition(pos => {
         const lat = pos.coords.latitude;
         const lon = pos.coords.longitude;
-        const akurasi = pos.coords.accuracy;
+        const newPoint = [lat, lon];
+        route.push(newPoint);
 
-        path.push([lat, lon]);
+        L.marker(newPoint).addTo(map);
+        map.setView(newPoint, 16);
 
-        if (path.length > 1) {
-          const last = path[path.length - 2];
-          totalDistance += getDistance(last[0], last[1], lat, lon);
+        if (route.length > 1) {
+          const prev = route[route.length - 2];
+          totalDistance += haversine(prev[0], prev[1], lat, lon);
         }
 
         if (polyline) map.removeLayer(polyline);
-        polyline = L.polyline(path, {color: 'blue'}).addTo(map);
-        map.setView([lat, lon], 16);
-
-        document.getElementById("info").innerText = `Jarak: ${totalDistance.toFixed(2)} km`;
-
+        polyline = L.polyline(route, { color: 'blue' }).addTo(map);
       }, err => {
         alert("Gagal mendapatkan lokasi: " + err.message);
       }, {
         enableHighAccuracy: true,
-        timeout: 10000,
+        timeout: 20000,
         maximumAge: 0
       });
     }
 
     function selesaiTracking() {
-      navigator.geolocation.clearWatch(watchID);
-      const harga = totalDistance * 2500;
-      const popup = document.getElementById("hasilBox");
-      popup.style.display = "block";
-      popup.innerHTML = `
-        <h3>Perjalanan Selesai</h3>
-        <p>Total Jarak: <strong>${totalDistance.toFixed(2)} km</strong></p>
-        <p>Total Biaya: <strong>Rp ${Math.round(harga).toLocaleString()}</strong></p>
-        <button onclick="tutupPopup()">Tutup</button>
-      `;
-    }
+      if (watchId) navigator.geolocation.clearWatch(watchId);
 
-    function tutupPopup() {
-      document.getElementById("hasilBox").style.display = "none";
+      const km = totalDistance.toFixed(2);
+      const harga = (km * 2500).toLocaleString('id-ID');
+
+      const box = document.getElementById("popupBox");
+      box.innerHTML = `<h3>Perjalanan Selesai</h3><p>Jarak: ${km} km</p><p>Biaya: Rp ${harga}</p>`;
+      box.style.display = "block";
+
+      setTimeout(() => box.style.display = "none", 7000);
     }
   </script>
 </body>
